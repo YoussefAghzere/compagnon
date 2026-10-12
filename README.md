@@ -48,4 +48,14 @@ Compte rendu avec Qwen/Gemma, actions et décisions, historique, identification 
 
 Le workflow GitHub Actions `Application Windows portable` produit également le dossier portable comme artefact après un push sur `main` ou un lancement manuel. Ce workflow est fourni, mais n'a pas été exécuté depuis cet environnement.
 
-Validation effectuée dans l'environnement Linux : installation des dépendances, `pip check`, tests d'export et de mixage audio avec périphériques simulés. Le téléchargement du modèle a échoué avec une réponse proxy `403 Forbidden` vers Hugging Face ; aucune transcription réelle n'a donc été validée ici.
+Validation effectuée dans l'environnement Linux : installation des dépendances, `pip check`, tests d'export, de mixage audio avec périphériques simulés et de décodage/rééchantillonnage réel avec PyAV. Le téléchargement du modèle a échoué avec une réponse proxy `403 Forbidden` vers Hugging Face ; aucune transcription réelle n'a donc été validée ici.
+
+## Erreur `metadata_errors`
+
+`faster-whisper` 1.2.1 utilise un argument supprimé dans PyAV 19. Le projet fixe donc `av==16.0.1`. Pour corriger une installation existante, récupérer le dernier code puis exécuter :
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
+Fermer puis relancer l'application. Pour la version portable, reconstruire avec `build.ps1` ou récupérer un nouvel artefact GitHub Actions ; modifier les dépendances Python locales ne corrige pas un ancien `.exe`.
