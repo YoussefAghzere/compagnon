@@ -90,3 +90,9 @@ Compte rendu avec Qwen/Gemma, actions et décisions, historique, identification 
 La détection inspecte désormais tout l’arbre UI Automation sans limite de profondeur et reconnaît aussi les contrôles interactifs `Custom`/`SplitButton` et les variantes d’identifiants de fin d’appel. Un bouton masqué ou désactivé ne déclenche pas la capture.
 
 Pendant un appel actif, ouvrir **Diagnostic Teams** : il affiche le nombre d’éléments accessibles, les types/noms/identifiants des contrôles interactifs et leurs états. **Copier le diagnostic** permet de transmettre ces observations pour analyser une version de Teams différente. Si aucun contrôle interactif n’est exposé, un changement de correspondance des boutons ne suffira pas : vérifier l’accessibilité Teams/WebView2 et les restrictions du poste avec l’équipe informatique. La capture manuelle reste disponible. Le diagnostic est local et peut contenir des titres ou noms affichés par Teams ; relire son contenu avant de le partager.
+
+### Python introuvable pendant la compilation
+
+`build.ps1` reutilise d’abord `.venv\Scripts\python.exe` : aucune installation specifique via `py -3.12` n’est requise si cet environnement fonctionne deja. Sans environnement local, il cherche un Python compatible dans `PATH`, puis avec le lanceur `py`. Les versions Windows 3.11 a 3.13 sont acceptees ; Python 3.12 reste la version utilisee en CI. Un environnement existant incompatible est conserve et signale, jamais remplace automatiquement.
+
+Verifier la version avec `python --version` ou `py -0p`. Puis recuperer le dernier script avec `git pull origin main` et relancer `.\build.ps1`. Le script PowerShell et la compilation restent a valider sur Windows ; les tests Linux ne prouvent pas qu’un build `.exe` a abouti.
