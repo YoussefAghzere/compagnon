@@ -9,14 +9,14 @@ import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .audio import Recorder
-from .core import save_transcript, teams_meeting_visible
+from .core import save_transcript, teams_meeting_visible, teams_windows
 
 
 class App:
     def __init__(self, root):
         self.root = root
         root.title('Compagnon — transcription locale')
-        root.geometry('650x460')
+        root.geometry('700x600')
         self.config_path = Path(os.getenv('LOCALAPPDATA', str(Path.home()))) / 'Compagnon' / 'settings.json'
         try:
             config = json.loads(self.config_path.read_text(encoding='utf-8'))
@@ -27,6 +27,9 @@ class App:
         self.model = tk.StringVar(value=config.get('model', 'base'))
         self.mic = tk.BooleanVar(value=True)
         self.auto = tk.BooleanVar(value=False)
+        self.fragment = tk.StringVar(value=config.get('teams_fragment', ''))
+        self.detection_status = tk.StringVar(value='Détection automatique désactivée.')
+        self.pending_auto = False
         self.status = tk.StringVar(value='Prêt — démarrez une réunion ou importez un enregistrement.')
         self.events = queue.Queue()
         self.busy = False
@@ -51,6 +54,12 @@ class App:
         ttk.Combobox(row, textvariable=self.model, values=['tiny', 'base', 'small', 'medium'], state='readonly', width=10).pack(side='left', padx=10)
         ttk.Checkbutton(box, text='Inclure mon microphone avec le son du PC', variable=self.mic).pack(anchor='w')
         ttk.Checkbutton(box, text='Détection Teams expérimentale (titres des fenêtres)', variable=self.auto, command=self.toggle_auto).pack(anchor='w')
+        ttk.Label(box, text='Fragment du titre de l’appel (facultatif ; sinon réunion/meeting/appel/call)').pack(anchor='w', pady=(8, 0))
+        row = ttk.Frame(box)
+        row.pack(fill='x')
+        ttk.Entry(row, textvariable=self.fragment).pack(side='left', fill='x', expand=True)
+        ttk.Button(row, text='Diagnostic Teams', command=self.diagnose_teams).pack(side='right')
+        ttk.Label(box, textvariable=self.detection_status, wraplength=650).pack(anchor='w', pady=4)
         ttk.Label(box, text='Informez les participants et respectez les règles de votre entreprise.', wraplength=600).pack(anchor='w', pady=10)
         row = ttk.Frame(box)
         row.pack(fill='x', pady=10)
@@ -71,13 +80,24 @@ class App:
 
     def save_settings(self):
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        self.config_path.write_text(json.dumps({'folder': self.folder.get(), 'model': self.model.get()}), encoding='utf-8')
+        self.config_path.write_text(json.dumps({'folder': self.folder.get(), 'model': self.model.get(), 'teams_fragment': self.fragment.get()}), encoding='utf-8')
 
     def toggle_auto(self):
         if self.auto.get():
-            accepted = messagebox.askokcancel('Détection expérimentale', 'Une fenêtre dont le titre contient Teams et réunion/appel peut déclencher la capture de tout le son du PC. Cette détection peut se tromper. Activez-la uniquement après avoir informé les participants.')
+            accepted = messagebox.askokcancel('Détection expérimentale', 'Une fenêtre Teams correspondant aux mots réunion/appel ou au fragment choisi peut déclencher la capture de tout le son du PC. Cette détection peut se tromper. Activez-la uniquement après avoir informé les participants.')
             self.auto.set(accepted)
         self.last_detected = False
+        self.pending_auto = False
+        self.detection_status.set('En attente d’une fenêtre d’appel correspondante.' if self.auto.get() else 'Détection automatique désactivée.')
+
+    def diagnose_teams(self):
+        try:
+            windows = teams_windows()
+            lines = [f"{'CORRESPOND' if window.matches(self.fragment.get()) else 'IGNORÉ'} : {window.title} ({Path(window.process).name or 'titre seulement'})" for window in windows]
+            text = '\n'.join(lines) if lines else 'Aucune fenêtre Teams détectée.'
+            messagebox.showinfo('Diagnostic Teams', text + '\n\nSi le titre de l’appel est ignoré, renseignez un fragment distinctif de ce titre. Évitez « Teams » seul : cela peut capturer hors réunion. Le transcript est créé après l’arrêt de la capture.')
+        except Exception as error:
+            messagebox.showerror('Diagnostic Teams', str(error))
 
     def set_busy(self, busy):
         self.busy = busy
@@ -171,12 +191,25 @@ class App:
                     self.status.set(f'Transcript sauvegardé : {value}' if kind == 'done' else f'Erreur : {value}')
                     if kind == 'error':
                         self.auto.set(False)
+                        self.detection_status.set('Détection désactivée après une erreur. Consultez le message ci-dessous.')
                         messagebox.showerror('Compagnon', value)
         except queue.Empty:
             pass
         if self.auto.get():
-            detected = teams_meeting_visible()
-            if detected and not self.last_detected and not self.busy:
+            try:
+                detected = teams_meeting_visible(self.fragment.get())
+            except Exception as error:
+                self.auto.set(False)
+                self.detection_status.set(f'Détection interrompue : {error}. Utilisez le mode manuel.')
+                detected = False
+            if self.auto.get():
+                self.detection_status.set('Fenêtre correspondante détectée — transcription après arrêt.' if detected else 'Aucun appel correspondant détecté — utilisez Diagnostic Teams.')
+            if detected and not self.last_detected:
+                self.pending_auto = True
+            if not detected:
+                self.pending_auto = False
+            if detected and self.pending_auto and not self.busy:
+                self.pending_auto = False
                 self.start(automatic=True)
             if self.recorder and self.started_automatically:
                 if detected:

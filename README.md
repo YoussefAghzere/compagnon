@@ -32,7 +32,7 @@ Les préférences et modèles sont stockés dans `%LOCALAPPDATA%\Compagnon`. Un 
 
 ## Détection automatique : limites
 
-La détection observe les titres des fenêtres visibles contenant « Teams » et « réunion », « meeting », « appel » ou « call ». Ce n'est pas une intégration officielle Teams : certains titres ne seront pas détectés et certains écrans pourront déclencher une capture à tort. L'arrêt automatique intervient après 20 secondes sans fenêtre correspondante. Le mode manuel est le mode fiable du MVP. La capture inclut tous les sons passant par la sortie Windows, pas uniquement Teams. Informer les participants et respecter les règles de l'entreprise avant activation.
+La détection observe les fenêtres Windows visibles (y compris réduites), identifiées par le processus `ms-teams.exe`/`Teams.exe` ou par « Teams » dans leur titre. Par défaut, le titre doit aussi contenir « réunion », « meeting », « appel » ou « call ». Un appel dont le titre est seulement un nom de participant ne correspond donc pas à cette règle. Le champ « Fragment du titre » permet de choisir explicitement un fragment distinctif du titre de cet appel ; il remplace les mots par défaut. Éviter « Teams » seul, qui pourrait déclencher une capture hors réunion. Le bouton « Diagnostic Teams » affiche les titres détectés et indique ceux qui correspondent, sans démarrer de capture. Ces titres restent dans la fenêtre de diagnostic et ne sont pas envoyés à un service externe. Ce n'est pas une intégration officielle Teams : certains titres ne seront pas détectés et certains écrans pourront déclencher une capture à tort. L'arrêt automatique intervient après 20 secondes sans fenêtre correspondante. Le mode manuel est le mode fiable du MVP. La capture inclut tous les sons passant par la sortie Windows, pas uniquement Teams. Informer les participants et respecter les règles de l'entreprise avant activation.
 
 ## Validation
 
@@ -59,3 +59,12 @@ Validation effectuée dans l'environnement Linux : installation des dépendances
 ```
 
 Fermer puis relancer l'application. Pour la version portable, reconstruire avec `build.ps1` ou récupérer un nouvel artefact GitHub Actions ; modifier les dépendances Python locales ne corrige pas un ancien `.exe`.
+
+### Vérifier un appel automatique
+
+1. Ouvrir l'appel Teams puis cliquer sur **Diagnostic Teams** dans Compagnon.
+2. Si le titre est **IGNORÉ**, renseigner un fragment distinctif de ce titre (par exemple le nom du participant), puis activer la détection et accepter son avertissement.
+3. Vérifier que l'état affiche **Capture en cours**, puis parler avec le micro activé. La détection seule ne prouve pas que l'audio est capturé.
+4. Terminer l'appel et attendre 20 secondes sans fenêtre correspondante, ou cliquer **Arrêter et transcrire**. Attendre ensuite le message **Transcript sauvegardé**. Un appel silencieux ne produit pas de transcript : une erreur **Aucune parole détectée** s'affiche.
+
+L'inspection des processus et la détection de vrais appels Windows restent à valider sur Windows. Les tests automatisés couvrent les règles de correspondance des titres/processus, pas une intégration réelle avec Teams.
