@@ -1,40 +1,61 @@
-# Compagnon 0.1
+# Compagnon 0.2
 
-Application Windows de capture et transcription locale des réunions et appels Teams en français, utilisable depuis une icône près de l’horloge.
+Application Windows de transcription locale des réunions Teams : une configuration initiale, puis une icône près de l’horloge.
 
-## Utilisation
+## Installer et configurer une fois
 
-1. Lancer Compagnon, choisir le dossier des transcripts et le modèle Whisper (`base` par défaut).
-2. Cocher **Capture automatique des appels Teams** et accepter l’avertissement. Le choix est mémorisé pour les prochains lancements, ainsi que le dossier, le modèle et le choix du microphone.
-3. Cocher **Démarrer dans la zone de notification** pour les prochains lancements. Fermer la fenêtre avec sa croix ou cliquer **Masquer dans la zone de notification** : Compagnon continue à fonctionner.
-4. Lancer un appel ou une réunion dans l’application Teams Windows. Aucun titre à saisir : la détection inspecte les boutons de fin d’appel accessibles, comme **Quitter**, **Raccrocher**, **Leave** ou **Hang up**. Le titre détecté sert à nommer le transcript.
-5. Une notification et une icône rouge indiquent le démarrage de la capture. Après la fin de l’appel et 20 secondes sans bouton correspondant, la capture s’arrête et la transcription commence (icône orange). Une notification annonce la sauvegarde du TXT horodaté.
+1. Télécharger **Compagnon.exe** (artefact GitHub Actions) et l’ouvrir. Ce fichier seul peut être partagé : Python et un dossier de DLL ne sont pas requis sur le PC destinataire.
+2. Dans **Configuration**, choisir le dossier des transcripts et le modèle Whisper. `base` est le compromis par défaut ; `tiny` est plus rapide, `small`/`medium` plus précis mais plus lents.
+3. Activer la capture automatique après avoir informé les participants. Choisir le microphone et le démarrage à l’ouverture de session Windows.
+4. Cliquer **Enregistrer et activer**, puis masquer la fenêtre. Les préférences sont conservées.
 
-Clic droit sur l’icône : ouvrir les paramètres, activer/désactiver l’automatisation, démarrer manuellement, arrêter et transcrire, ouvrir les transcripts ou quitter. **Quitter Compagnon** ferme le processus ; pendant une capture/transcription, arrêter et attendre le résultat d’abord. Désactiver l’automatisation pendant une capture ne supprime pas celle-ci : utiliser **Arrêter et transcrire**.
+L’ouverture manuelle montre **toujours** la fenêtre. Le démarrage masqué ne concerne que le lancement automatique Windows (`--background`), après configuration. Relancer le fichier pendant que Compagnon fonctionne rouvre la fenêtre existante ; aucune seconde capture parallèle n’est créée. La croix masque l’application, et **Quitter** l’arrête.
 
-Compagnon doit être lancé pour fonctionner. Cette version ne s’inscrit pas automatiquement au démarrage de Windows. L’icône peut être rangée dans les icônes masquées de Windows. Si elle ne peut pas être créée, la fenêtre reste accessible.
+La première ouverture de v0.2 conserve le dossier et le modèle de v0.1 mais demande de valider la nouvelle configuration. Une ancienne préférence « masquer » ne ferme plus immédiatement l’écran de configuration.
 
-## Détection Teams : limites
+## Démarrage Windows
 
-- Application Teams **native Windows**, identifiée par `ms-teams.exe` ou `Teams.exe`. Teams dans un navigateur n’est pas pris en charge par l’automatisation.
-- La détection est une inspection locale en lecture seule de l’interface Windows UI Automation, pas une API officielle Teams. Certaines versions, langues ou restrictions de l’entreprise peuvent empêcher l’accès aux boutons. Le bouton **Diagnostic Teams** affiche le dernier résultat ; le mode manuel reste disponible.
-- Ouvrir simplement la fenêtre de discussion ou l’écran « Rejoindre » ne doit pas déclencher la capture. Aucun mot du titre n’est utilisé pour déclencher celle-ci.
-- Une fenêtre d’appel déjà détectée peut être réduite sans arrêt de capture. Si Teams masque alors ses contrôles, Compagnon conserve l’état actif jusqu’à disparition/restauration de la fenêtre. Si un appel se termine dans une fenêtre réduite qui reste ouverte, l’arrêt peut nécessiter **Arrêter et transcrire** depuis l’icône.
-- Une inspection en erreur ou bloquée n’est pas interprétée comme une fin d’appel. L’interface reste réactive et le diagnostic indique le problème. Une capture peut alors nécessiter un arrêt manuel.
-- Deux appels sans intervalle d’absence de 20 secondes peuvent être regroupés dans une seule capture. La transcription d’une réunion occupe l’application ; une nouvelle réunion encore active sera capturée une fois le traitement terminé, mais son début peut manquer.
-- Un arrêt manuel ne relance pas automatiquement la capture du même appel. Réactiver l’automatisation permet de réarmer la détection.
+Si cette option est cochée et enregistrée, la version `.exe` se copie dans **`%LOCALAPPDATA%\Compagnon\App\Compagnon.exe`** et ajoute une entrée utilisateur `Compagnon` dans **`HKCU\Software\Microsoft\Windows\CurrentVersion\Run`**. Aucun droit administrateur n’est demandé. Elle se lance à l’ouverture de la session utilisateur, et non avant la connexion ni comme service Windows.
 
-## Audio et confidentialité
+Le fichier téléchargé peut ensuite être déplacé : l’entrée pointe vers la copie installée. Avec le mode **Masquer au démarrage automatique**, seule l’icône apparaît. Si l’icône ne peut pas démarrer, la fenêtre est restaurée. Windows peut ranger l’icône dans les icônes masquées.
 
-La capture comprend tous les sons de la sortie Windows par défaut et, si activé, le microphone par défaut. Teams doit utiliser cette même sortie audio. Autoriser le microphone dans Windows. Un casque limite l’écho ; aucune annulation d’écho n’est implémentée. Éviter de changer de périphérique pendant la capture.
+Pour désactiver le démarrage : décocher l’option et cliquer **Enregistrer et activer**. Pour retirer l’application : désactiver le démarrage, quitter via l’icône, puis supprimer le dossier `%LOCALAPPDATA%\Compagnon` si les réglages et modèles ne sont plus nécessaires. Les transcripts du dossier choisi ne sont pas supprimés.
 
-Informer les participants et respecter les règles de l’entreprise avant activation. Aucun audio, titre de fenêtre ou transcript n’est envoyé à un service de transcription distant. La transcription s’exécute sur CPU avec `faster-whisper` après l’arrêt ; le premier usage télécharge le modèle depuis Hugging Face, puis utilise le cache local. Un appel sans parole détectée affiche une erreur plutôt qu’un transcript vide.
+Pour mettre à jour la copie installée : quitter l’ancienne instance via son icône, ouvrir le nouveau `.exe`, puis **Enregistrer et activer** avec le démarrage Windows coché. Ne pas tenter de remplacer l’exécutable pendant qu’il tourne. L’entreprise peut bloquer les exécutables non signés ou le démarrage utilisateur : demander alors une installation prise en charge par l’équipe informatique.
 
-Préférences et modèles : `%LOCALAPPDATA%\Compagnon`. Un WAV temporaire est écrit dans le dossier temporaire Windows puis supprimé après traitement, y compris en cas d’erreur normale. Un arrêt forcé peut laisser ce fichier ; la suppression n’est pas un effacement sécurisé. En cas d’échec de transcription, le WAV de capture n’est pas conservé.
+## Usage quotidien
 
-## Développement Windows
+Le tableau de bord affiche la capture, la transcription et la détection. Le menu de l’icône permet d’ouvrir les paramètres, de démarrer/arrêter manuellement, d’activer/désactiver l’automatisation et d’ouvrir les transcripts.
 
-Installer Python 3.12 avec Tcl/Tk, puis dans ce dossier :
+- **Bleu** : prêt ; **rouge** : capture ; **orange** : traitement.
+- Démarrage automatique sur les boutons de fin d’appel Teams, sans saisie du titre.
+- Après 20 secondes sans appel détecté : arrêt puis transcription sur CPU et export TXT horodaté, sans écraser les fichiers précédents.
+- Notifications au début et à la fin. Les notifications Windows peuvent être désactivées ; l’icône et le tableau de bord restent les indicateurs disponibles.
+- Import d’un fichier audio et capture manuelle disponibles en secours.
+
+La capture automatique est expérimentale et nécessite une validation sur la version de Teams du poste. La capture du son reste active si l’automatisation est décochée pendant une réunion : utiliser **Arrêter et transcrire**. Quitter pendant un traitement nécessite d’arrêter et d’attendre le résultat.
+
+## Limites de détection
+
+Teams **natif Windows**, identifié par `ms-teams.exe` ou `Teams.exe`, est pris en charge ; Teams dans le navigateur ne l’est pas. L’application inspecte localement l’interface Windows UI Automation et cherche les boutons **Quitter**, **Raccrocher**, **Leave**, **Hang up** ou leurs identifiants. Il ne s’agit pas d’une API officielle Teams.
+
+L’écran de discussion ou « Rejoindre » ne déclenche pas la capture. Les versions, langues et restrictions du poste peuvent toutefois empêcher l’accès aux boutons. **Diagnostic Teams** affiche et copie les contrôles accessibles, leurs noms/identifiants et leurs états. Le diagnostic est local ; relire son contenu avant de le partager, car il peut contenir des titres ou noms affichés par Teams.
+
+Une fenêtre d’appel déjà détectée peut être réduite sans arrêt. Si ses contrôles deviennent inaccessibles, l’état actif est conservé jusqu’à restauration/disparition de la fenêtre. Une fin d’appel laissant cette fenêtre réduite ouverte peut nécessiter un arrêt manuel. Une inspection bloquée ou en erreur ne déclenche pas un arrêt : le diagnostic le signale et la fenêtre reste utilisable.
+
+Deux appels sans intervalle d’absence de 20 secondes peuvent être regroupés. Une transcription occupe l’application ; une nouvelle réunion sera capturée quand le traitement finit si elle est encore active, mais son début peut manquer. Après un arrêt manuel, le même appel n’est pas automatiquement recapturé.
+
+## Audio, modèles et stockage
+
+La capture comprend **tous les sons de la sortie Windows par défaut** et le microphone par défaut s’il est activé. Teams doit utiliser cette même sortie. Autoriser le microphone dans Windows et utiliser un casque pour limiter l’écho. Aucune annulation d’écho n’est implémentée ; éviter de changer de périphérique pendant une capture.
+
+Le premier usage télécharge le modèle depuis Hugging Face, puis utilise le cache local. **Le modèle n’est pas dans le `.exe`** : Internet est requis pour ce téléchargement, et les modèles peuvent occuper de plusieurs dizaines de Mo à plus d’un Go selon le choix. Aucun audio ni transcript n’est envoyé à un service de transcription distant. Un appel sans parole affiche une erreur plutôt qu’un transcript vide.
+
+Préférences, application installée et modèles : `%LOCALAPPDATA%\Compagnon`. Un WAV temporaire est supprimé après traitement, même en cas d’erreur normale. Un arrêt forcé peut le laisser ; la suppression n’est pas un effacement sécurisé. En cas d’échec, l’audio temporaire de capture n’est pas conservé.
+
+## Compiler et développer
+
+Python Windows 3.11 à 3.13 est accepté ; Python 3.12 est utilisé en CI. Avec Tcl/Tk installé :
 
 ```powershell
 py -3.12 -m venv .venv
@@ -42,57 +63,40 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe main.py
 ```
 
-Pour mettre à jour une installation existante, fermer Compagnon via **Quitter Compagnon**, puis :
+Pour mettre à jour le code, quitter l’application puis :
 
 ```powershell
 git pull origin main
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe main.py
+.\build.ps1
 ```
 
-Pour lancer sans console, utiliser `.\.venv\Scripts\pythonw.exe main.py`. Après configuration, le démarrage masqué est mémorisé. La fermeture de la console d’un lancement avec `python.exe` peut arrêter le processus : utiliser `pythonw.exe` ou la version portable pour le fonctionnement en arrière-plan.
+Le script réutilise le `.venv` Windows existant. Sinon il cherche un Python compatible dans PATH ou via `py`, sans remplacer un environnement incompatible.
 
-## Application portable
+- **`build.ps1`** : produit `dist\Compagnon.exe`, fichier unique PyInstaller compressé, et affiche sa taille réelle.
+- **`build.ps1 -Folder`** : variante `dist\Compagnon\Compagnon.exe` pour diagnostiquer le bundle ; distribuer alors tout ce dossier.
+- Le fichier unique extrait son runtime dans un dossier temporaire au lancement : le premier démarrage peut être plus lent et son occupation décompressée reste plus importante que la taille du téléchargement.
+- La collecte de fichiers de Whisper/CTranslate2 est ciblée au lieu de collecter tous leurs modules. Les dépendances natives restent lourdes : aucune taille Windows précise ni réduction garantie n’est annoncée avant compilation. Le modèle est téléchargé séparément.
 
-Sur Windows : `powershell -ExecutionPolicy Bypass -File .\build.ps1`. Distribuer **tout le dossier** `dist\Compagnon`, puis lancer `Compagnon.exe`. Python n’est pas requis sur le PC destinataire. Les modèles ne sont pas inclus et nécessitent Internet au premier usage. L’exécutable n’est pas signé ; sa diffusion sur les PC professionnels peut nécessiter une validation informatique.
+Avec le code source, le démarrage utilisateur pointe vers `pythonw.exe` et le chemin absolu de `main.py`. Conserver cet environnement et ce checkout ; préférer le `.exe` pour la distribution.
 
-Le workflow GitHub Actions **Application Windows portable** construit ce dossier comme artefact après un push sur `main` ou un lancement manuel. Une ancienne version `.exe` doit être remplacée par un nouveau build pour bénéficier des corrections.
+Le workflow GitHub Actions **Application Windows portable** compile le fichier unique, exécute les tests, vérifie le runtime embarqué puis publie le `.exe` comme artefact téléchargeable. Il n’est pas signé.
 
-## Validation
+## Validation et état réel
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe -m pip check
 ```
 
-Les tests couvrent l’export sans écrasement, le mixage simulé, le décodage réel d’un WAV avec PyAV, les contrôles d’appel, les transitions de début/fin et les commandes/états de l’icône. Les interfaces Windows UI Automation et la zone de notification sont simulées dans ces tests.
+Les tests couvrent l’export, le mixage simulé, le décodage WAV réel avec PyAV, les règles et transitions d’appel, les commandes d’icône, la visibilité au lancement et l’enregistrement utilisateur avec un registre simulé. Le mode `--smoke-test chemin.json` vérifie les bibliothèques embarquées, le décodage et l’icône sans capturer, télécharger un modèle ou modifier le registre. Sur Windows il vérifie aussi le chargement de SoundCard, pystray et UI Automation.
 
-Avant distribution, vérifier **sur Windows** :
+Le cloud est Linux : les vrais appels Teams, la capture WASAPI, le registre Windows, l’activation d’une deuxième instance et le `.exe` nécessitent encore validation sur Windows. Le téléchargement de modèle était bloqué par le proxy lors du premier essai ; aucune transcription réelle n’a été validée ici.
 
-- Aucun démarrage sur l’écran de discussion ou avant de rejoindre un appel.
-- Démarrage sur un appel nommé librement (par exemple `M3S - transcript test`) et voix locale/distante présentes dans le TXT.
-- Capture poursuivie quand Compagnon est masqué et Teams réduit, arrêt automatique après disparition de la fenêtre d’appel.
-- Menu de l’icône, notifications, démarrage masqué mémorisé, arrêt manuel sans redémarrage du même appel.
-- Dossier portable sur un PC sans Python et import d’un enregistrement existant.
+Avant distribution : vérifier la configuration toujours accessible, le deuxième lancement, le démarrage après déconnexion/reconnexion Windows, l’arrêt du démarrage, le déplacement du fichier téléchargé, la capture avec deux voix et l’export, puis l’exécution du `.exe` seul sur un PC sans Python.
 
-L’environnement de développement cloud est Linux : la capture WASAPI, les vrais contrôles Teams, la zone de notification Windows et le `.exe` n’y sont pas validés. Le téléchargement de modèle était bloqué par le proxy Hugging Face lors du premier essai ; aucune transcription réelle n’a été validée dans cet environnement.
+`av==16.0.1` évite l’incompatibilité `metadata_errors` entre faster-whisper 1.2.1 et PyAV 19.
 
-## Compatibilité audio
+## Prochaines améliorations
 
-`faster-whisper` 1.2.1 utilise `metadata_errors`, supprimé dans PyAV 19. `av==16.0.1` est fixé dans `requirements.txt` et le décodage est testé. Réinstaller les dépendances et relancer l’application après mise à jour.
-
-## Suite envisagée
-
-Compte rendu avec Qwen/Gemma, actions et décisions, historique, identification des intervenants, pause/reprise et politique de conservation. Ces fonctionnalités ne sont pas encore implémentées.
-
-### Fenêtre détectée mais aucun bouton de fin d’appel
-
-La détection inspecte désormais tout l’arbre UI Automation sans limite de profondeur et reconnaît aussi les contrôles interactifs `Custom`/`SplitButton` et les variantes d’identifiants de fin d’appel. Un bouton masqué ou désactivé ne déclenche pas la capture.
-
-Pendant un appel actif, ouvrir **Diagnostic Teams** : il affiche le nombre d’éléments accessibles, les types/noms/identifiants des contrôles interactifs et leurs états. **Copier le diagnostic** permet de transmettre ces observations pour analyser une version de Teams différente. Si aucun contrôle interactif n’est exposé, un changement de correspondance des boutons ne suffira pas : vérifier l’accessibilité Teams/WebView2 et les restrictions du poste avec l’équipe informatique. La capture manuelle reste disponible. Le diagnostic est local et peut contenir des titres ou noms affichés par Teams ; relire son contenu avant de le partager.
-
-### Python introuvable pendant la compilation
-
-`build.ps1` reutilise d’abord `.venv\Scripts\python.exe` : aucune installation specifique via `py -3.12` n’est requise si cet environnement fonctionne deja. Sans environnement local, il cherche un Python compatible dans `PATH`, puis avec le lanceur `py`. Les versions Windows 3.11 a 3.13 sont acceptees ; Python 3.12 reste la version utilisee en CI. Un environnement existant incompatible est conserve et signale, jamais remplace automatiquement.
-
-Verifier la version avec `python --version` ou `py -0p`. Puis recuperer le dernier script avec `git pull origin main` et relancer `.\build.ps1`. Le script PowerShell et la compilation restent a valider sur Windows ; les tests Linux ne prouvent pas qu’un build `.exe` a abouti.
+Préparation/vérification du modèle avant la première réunion, indicateur de niveau sonore, récupération d’audio après une erreur, historique consultable, compte rendu local avec actions et décisions, exécutable signé et mises à jour contrôlées. Ces fonctions ne sont pas encore implémentées.

@@ -1,4 +1,5 @@
 import json
+import argparse
 import os
 from pathlib import Path
 import queue
@@ -12,24 +13,36 @@ from tkinter import filedialog, messagebox, ttk
 from .audio import Recorder
 from .core import save_transcript
 from .detection import TeamsDetector, Detection, CallLifecycle
+from .windows import configure_startup, SingleInstance
 
 
 class App:
-    def __init__(self, root):
+    def __init__(self, root, launch_background=False):
         self.root = root
-        root.title('Compagnon 0.1 — transcription locale')
-        root.geometry('700x680')
-        root.minsize(650, 620)
+        root.title('Compagnon 0.2')
+        root.geometry('860x800')
+        root.minsize(800, 760)
+        root.configure(background='#f3f5fa')
+        from PIL import ImageTk
+        from .tray import Tray
+        self.window_icon = ImageTk.PhotoImage(Tray.image('idle'), master=root)
+        root.iconphoto(True, self.window_icon)
         self.config_path = Path(os.getenv('LOCALAPPDATA', str(Path.home()))) / 'Compagnon' / 'settings.json'
         try:
             config = json.loads(self.config_path.read_text(encoding='utf-8'))
         except (OSError, ValueError):
             config = {}
+        if not isinstance(config, dict):
+            config = {}
+        self.setup_complete = bool(config.get('setup_complete', False))
+        self.launch_background = launch_background and self.setup_complete
+        self.registered_autostart = bool(config.get('autostart', False))
+        self.autostart = tk.BooleanVar(value=bool(config.get('autostart', sys.platform == 'win32')))
         self.folder = tk.StringVar(value=config.get('folder', str(Path.home() / 'Documents' / 'Compagnon')))
         self.title = tk.StringVar(value='Réunion Teams')
         self.model = tk.StringVar(value=config.get('model', 'base'))
         self.mic = tk.BooleanVar(value=bool(config.get('microphone', True)))
-        self.auto = tk.BooleanVar(value=bool(config.get('automatic', False)))
+        self.auto = tk.BooleanVar(value=bool(config.get('automatic', False)) and self.setup_complete)
         self.background = tk.BooleanVar(value=bool(config.get('background', False)))
         self.detection_status = tk.StringVar(value='Détection automatique désactivée.')
         self.lifecycle = CallLifecycle()
@@ -44,39 +57,8 @@ class App:
         self.tray = None
         self.tray_ready = False
         self.recording = False
-        box = ttk.Frame(root, padding=20)
-        box.pack(fill='both', expand=True)
-        ttk.Label(box, text='Compagnon', font=('', 20)).pack(anchor='w')
-        ttk.Label(box, text='Audio et transcription traités localement sur votre PC.').pack(anchor='w', pady=8)
-        ttk.Label(box, text='Titre de la réunion').pack(anchor='w')
-        ttk.Entry(box, textvariable=self.title).pack(fill='x')
-        ttk.Label(box, text='Dossier des transcripts').pack(anchor='w', pady=(10, 0))
-        row = ttk.Frame(box)
-        row.pack(fill='x')
-        ttk.Entry(row, textvariable=self.folder).pack(side='left', fill='x', expand=True)
-        ttk.Button(row, text='Choisir', command=self.choose_folder).pack(side='right')
-        row = ttk.Frame(box)
-        row.pack(fill='x', pady=12)
-        ttk.Label(row, text='Modèle Whisper').pack(side='left')
-        ttk.Combobox(row, textvariable=self.model, values=['tiny', 'base', 'small', 'medium'], state='readonly', width=10).pack(side='left', padx=10)
-        ttk.Checkbutton(box, text='Inclure mon microphone avec le son du PC', variable=self.mic).pack(anchor='w')
-        ttk.Checkbutton(box, text='Capture automatique des appels Teams (expérimentale)', variable=self.auto, command=self.toggle_auto).pack(anchor='w')
-        ttk.Checkbutton(box, text='Démarrer dans la zone de notification', variable=self.background, command=self.persist_settings).pack(anchor='w')
-        ttk.Button(box, text='Diagnostic Teams', command=self.diagnose_teams).pack(anchor='w', pady=6)
-        ttk.Label(box, textvariable=self.detection_status, wraplength=650).pack(anchor='w', pady=4)
-        ttk.Label(box, text='Informez les participants et respectez les règles de votre entreprise.', wraplength=600).pack(anchor='w', pady=10)
-        row = ttk.Frame(box)
-        row.pack(fill='x', pady=10)
-        self.start_button = ttk.Button(row, text='Démarrer', command=self.start)
-        self.start_button.pack(side='left')
-        self.stop_button = ttk.Button(row, text='Arrêter et transcrire', command=self.stop, state='disabled')
-        self.stop_button.pack(side='left', padx=8)
-        self.import_button = ttk.Button(row, text='Importer un audio', command=self.import_audio)
-        self.import_button.pack(side='left')
-        ttk.Label(box, textvariable=self.status, wraplength=600).pack(anchor='w', pady=10)
+        self.build_ui()
         root.protocol('WM_DELETE_WINDOW', self.hide)
-        ttk.Button(box, text='Masquer dans la zone de notification', command=self.hide).pack(anchor='w')
-        ttk.Button(box, text='Quitter Compagnon', command=self.close).pack(anchor='w', pady=4)
         if sys.platform == 'win32':
             try:
                 from .tray import Tray
@@ -86,6 +68,107 @@ class App:
                 self.status.set(f'Icône indisponible : {error}. La fenêtre reste ouverte.')
         threading.Thread(target=self.detection_worker, daemon=True).start()
         root.after(200, self.poll)
+        if self.launch_background and self.background.get():
+            root.withdraw()
+            root.after(5000, self.restore_if_tray_unavailable)
+
+    def build_ui(self):
+        style = ttk.Style(self.root)
+        style.theme_use('clam')
+        style.configure('.', font=('Segoe UI', 10))
+        style.configure('TFrame', background='#f3f5fa')
+        style.configure('Card.TFrame', background='white')
+        style.configure('TLabel', background='#f3f5fa', foreground='#253047')
+        style.configure('Card.TLabel', background='white')
+        style.configure('Heading.TLabel', font=('Segoe UI', 23, 'bold'), foreground='#16233b')
+        style.configure('Section.TLabel', background='white', font=('Segoe UI', 11, 'bold'))
+        style.configure('TButton', padding=(12, 8))
+        style.configure('Primary.TButton', background='#2563eb', foreground='white', padding=(18, 10))
+        style.map('Primary.TButton', background=[('active', '#1d4ed8'), ('disabled', '#9ca3af')])
+        style.configure('TCheckbutton', background='white', padding=4)
+        style.configure('TNotebook', background='#f3f5fa', borderwidth=0)
+        style.configure('TNotebook.Tab', padding=(18, 10))
+        outer = ttk.Frame(self.root, padding=24)
+        outer.pack(fill='both', expand=True)
+        header = ttk.Frame(outer)
+        header.pack(fill='x', pady=(0, 16))
+        ttk.Label(header, text='Compagnon', style='Heading.TLabel').pack(side='left')
+        ttk.Label(header, text='0.2  •  PRIVÉ & LOCAL', foreground='#64748b').pack(side='right')
+        ttk.Label(outer, text='Vos réunions deviennent des notes. Votre audio reste sur votre PC.').pack(anchor='w', pady=(0, 16))
+        notebook = ttk.Notebook(outer)
+        notebook.pack(fill='both', expand=True)
+        home = ttk.Frame(notebook, style='Card.TFrame', padding=20)
+        settings = ttk.Frame(notebook, style='Card.TFrame', padding=20)
+        notebook.add(home, text='Tableau de bord')
+        notebook.add(settings, text='Configuration')
+        if not self.setup_complete:
+            notebook.select(settings)
+        ttk.Label(home, text='Activité', style='Section.TLabel').pack(anchor='w')
+        ttk.Label(home, textvariable=self.status, style='Card.TLabel', wraplength=710).pack(anchor='w', pady=14)
+        ttk.Label(home, textvariable=self.detection_status, style='Card.TLabel', wraplength=710).pack(anchor='w', pady=(0, 16))
+        ttk.Label(home, text='Capture manuelle', style='Section.TLabel').pack(anchor='w', pady=(10, 8))
+        ttk.Label(home, text='Titre du fichier (en automatique, le titre Teams est utilisé)', style='Card.TLabel').pack(anchor='w')
+        ttk.Entry(home, textvariable=self.title).pack(fill='x', pady=8)
+        row = ttk.Frame(home, style='Card.TFrame')
+        row.pack(fill='x', pady=8)
+        self.start_button = ttk.Button(row, text='Démarrer', command=self.start, style='Primary.TButton')
+        self.start_button.pack(side='left')
+        self.stop_button = ttk.Button(row, text='Arrêter et transcrire', command=self.stop, state='disabled')
+        self.stop_button.pack(side='left', padx=8)
+        self.import_button = ttk.Button(row, text='Importer un audio', command=self.import_audio)
+        self.import_button.pack(side='left')
+        ttk.Button(home, text='Ouvrir mes transcripts', command=self.open_folder).pack(anchor='w', pady=10)
+        ttk.Button(home, text='Diagnostic Teams', command=self.diagnose_teams).pack(anchor='w')
+        ttk.Label(settings, text='Une configuration, puis Compagnon vous accompagne.', style='Section.TLabel').pack(anchor='w', pady=(0, 16))
+        ttk.Label(settings, text='Dossier des transcripts', style='Card.TLabel').pack(anchor='w')
+        row = ttk.Frame(settings, style='Card.TFrame')
+        row.pack(fill='x', pady=(6, 14))
+        ttk.Entry(row, textvariable=self.folder).pack(side='left', fill='x', expand=True)
+        ttk.Button(row, text='Parcourir…', command=self.choose_folder).pack(side='right', padx=(8, 0))
+        ttk.Label(settings, text='Qualité de transcription', style='Card.TLabel').pack(anchor='w')
+        ttk.Combobox(settings, textvariable=self.model, values=['tiny', 'base', 'small', 'medium'], state='readonly', width=20).pack(anchor='w', pady=6)
+        ttk.Label(settings, text='tiny : rapide  •  base : équilibré  •  small / medium : plus précis, plus lents', style='Card.TLabel').pack(anchor='w', pady=(0, 12))
+        ttk.Checkbutton(settings, text='Inclure mon microphone avec le son du PC', variable=self.mic).pack(anchor='w')
+        ttk.Checkbutton(settings, text='Capturer automatiquement les appels Teams', variable=self.auto, command=self.toggle_auto).pack(anchor='w')
+        ttk.Checkbutton(settings, text='Lancer Compagnon à l’ouverture de ma session Windows', variable=self.autostart).pack(anchor='w')
+        ttk.Checkbutton(settings, text='Masquer la fenêtre au démarrage automatique', variable=self.background).pack(anchor='w')
+        ttk.Label(settings, text='Le premier téléchargement du modèle nécessite Internet.\nInformez les participants avant toute capture. La détection Teams reste expérimentale.', style='Card.TLabel', wraplength=710).pack(anchor='w', pady=14)
+        ttk.Button(settings, text='Enregistrer et activer', style='Primary.TButton', command=self.complete_setup).pack(anchor='w')
+        footer = ttk.Frame(outer)
+        footer.pack(fill='x', pady=(16, 0))
+        ttk.Label(footer, text='Bleu : prêt   •   Rouge : capture   •   Orange : transcription', foreground='#64748b').pack(side='left')
+        ttk.Button(footer, text='Masquer', command=self.hide).pack(side='right')
+        ttk.Button(footer, text='Quitter', command=self.close).pack(side='right', padx=8)
+
+    def restore_if_tray_unavailable(self):
+        if not self.tray_ready:
+            self.show()
+
+    def complete_setup(self):
+        try:
+            folder = Path(self.folder.get().strip())
+            if not self.folder.get().strip():
+                raise ValueError('Choisissez un dossier de sauvegarde.')
+            folder.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryFile(dir=folder):
+                pass
+            configure_startup(self.autostart.get(), self.config_path.parent)
+            self.registered_autostart = self.autostart.get()
+            previous = self.setup_complete
+            self.setup_complete = True
+            try:
+                self.save_settings()
+            except Exception:
+                self.setup_complete = previous
+                raise
+        except Exception as error:
+            self.show()
+            messagebox.showerror('Configuration non enregistrée', str(error))
+            return
+        self.lifecycle = CallLifecycle()
+        self.status.set('Configuration enregistrée. Compagnon est prêt.')
+        self.notify('Configuration enregistrée. Compagnon est prêt.')
+        messagebox.showinfo('Compagnon est prêt', 'Vos réglages sont enregistrés. Vous pouvez masquer cette fenêtre et la rouvrir depuis l’icône ou en relançant Compagnon. Le démarrage Windows suit votre choix.')
 
     def choose_folder(self):
         folder = filedialog.askdirectory()
@@ -94,13 +177,17 @@ class App:
 
     def save_settings(self):
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        self.config_path.write_text(json.dumps({'folder': self.folder.get(), 'model': self.model.get(), 'automatic': self.auto.get(), 'background': self.background.get(), 'microphone': self.mic.get()}), encoding='utf-8')
+        temporary = self.config_path.with_suffix('.tmp')
+        temporary.write_text(json.dumps({'folder': self.folder.get(), 'model': self.model.get(), 'automatic': self.auto.get(), 'background': self.background.get(), 'microphone': self.mic.get(), 'setup_complete': self.setup_complete, 'autostart': self.registered_autostart}), encoding='utf-8')
+        temporary.replace(self.config_path)
 
     def persist_settings(self):
         try:
             self.save_settings()
+            return True
         except OSError as error:
             messagebox.showerror('Configuration', str(error))
+            return False
 
     def toggle_auto(self):
         if self.auto.get():
@@ -149,8 +236,11 @@ class App:
         if not self.tray_ready:
             messagebox.showinfo('Compagnon', 'L’icône n’est pas disponible. La fenêtre doit rester ouverte ; elle peut être réduite.')
             return
-        self.persist_settings()
-        self.root.withdraw()
+        if not self.setup_complete:
+            messagebox.showinfo('Configuration', 'Cliquez sur Enregistrer et activer avant de masquer Compagnon.')
+            return
+        if self.persist_settings():
+            self.root.withdraw()
 
     def notify(self, text):
         if self.tray_ready:
@@ -261,7 +351,7 @@ class App:
                     self.stop_button.configure(state='normal')
                 elif kind == 'tray_ready':
                     self.tray_ready = True
-                    if self.background.get():
+                    if self.launch_background and self.background.get() and self.setup_complete:
                         self.hide()
                 elif kind == 'tray_error':
                     self.tray_ready = False
@@ -298,7 +388,7 @@ class App:
                         messagebox.showerror('Compagnon', value)
         except queue.Empty:
             pass
-        if self.auto.get():
+        if self.auto.get() and self.setup_complete:
             active = self.detection.active
             if time.monotonic() - self.detection_time > 10:
                 active = None
@@ -338,6 +428,25 @@ class App:
 
 
 def main():
-    root = tk.Tk()
-    App(root)
-    root.mainloop()
+    parser = argparse.ArgumentParser(description='Compagnon — transcription locale')
+    parser.add_argument('--background', action='store_true', help='Démarrage Windows dans la zone de notification après configuration')
+    parser.add_argument('--smoke-test', metavar='REPORT', help='Vérifier les bibliothèques embarquées sans capturer ni télécharger')
+    arguments = parser.parse_args()
+    if arguments.smoke_test:
+        from .smoke import check_runtime
+        raise SystemExit(check_runtime(arguments.smoke_test))
+    instance = SingleInstance(arguments.background)
+    try:
+        if not instance.primary:
+            return
+        root = tk.Tk()
+        app = App(root, launch_background=arguments.background)
+        def activation():
+            if instance.wants_settings():
+                app.launch_background = False
+                app.show()
+            root.after(500, activation)
+        root.after(500, activation)
+        root.mainloop()
+    finally:
+        instance.close()

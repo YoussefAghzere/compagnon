@@ -1,3 +1,5 @@
+param([switch]$Folder)
+
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
 
@@ -47,6 +49,12 @@ Write-Host "Python utilise : $BuildPython"
 if ($LASTEXITCODE -ne 0) { throw "Installation echouee" }
 & $BuildPython -m pip check
 if ($LASTEXITCODE -ne 0) { throw "Dependances incompatibles" }
-& $BuildPython -m PyInstaller --noconfirm --clean --onedir --windowed --name Compagnon --collect-all faster_whisper --collect-all ctranslate2 --collect-all soundcard --collect-all pywinauto --collect-all comtypes --hidden-import pystray._win32 main.py
+$BundleMode = if ($Folder) { "--onedir" } else { "--onefile" }
+& $BuildPython -m PyInstaller --noconfirm --clean $BundleMode --windowed --name Compagnon --icon assets\compagnon.ico --collect-data faster_whisper --collect-binaries ctranslate2 --collect-data soundcard --collect-all pywinauto --collect-all comtypes --hidden-import pystray._win32 main.py
 if ($LASTEXITCODE -ne 0) { throw "Compilation echouee" }
-Write-Host "Application portable : dist\Compagnon\Compagnon.exe (distribuer le dossier entier)."
+if ($Folder) {
+    Write-Host "Application : dist\Compagnon\Compagnon.exe (distribuer le dossier entier)."
+} else {
+    $Output = Get-Item .\dist\Compagnon.exe
+    Write-Host ("Executable unique : {0} ({1:N1} Mo). Les modeles Whisper seront telecharges au premier usage." -f $Output.FullName, ($Output.Length / 1MB))
+}

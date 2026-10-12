@@ -22,6 +22,8 @@ class AppTests(unittest.TestCase):
         app.root = Mock()
         app.auto = Value(True)
         app.background = Value(False)
+        app.launch_background = False
+        app.setup_complete = True
         app.lifecycle = CallLifecycle()
         app.detection = Detection(None)
         app.detection_time = time.monotonic()
@@ -38,7 +40,7 @@ class AppTests(unittest.TestCase):
         app.stop_button = Mock()
         app.import_button = Mock()
         app.worker_stop = threading.Event()
-        app.persist_settings = Mock()
+        app.persist_settings = Mock(return_value=True)
         return app
 
     def test_detection_starts_while_window_is_hidden(self):
@@ -48,6 +50,37 @@ class AppTests(unittest.TestCase):
         app.poll()
         app.start.assert_called_once_with(automatic=True)
         app.root.deiconify.assert_not_called()
+
+    def test_manual_launch_never_auto_hides_even_with_old_hidden_preference(self):
+        app = self.app()
+        app.background.set(True)
+        app.launch_background = False
+        app.hide = Mock()
+        app.events.put(('tray_ready', None))
+        app.poll()
+        app.hide.assert_not_called()
+
+    def test_windows_background_launch_hides_only_after_setup_and_tray_ready(self):
+        app = self.app()
+        app.launch_background = True
+        app.background.set(True)
+        app.hide = Mock()
+        app.events.put(('tray_ready', None))
+        app.poll()
+        app.hide.assert_called_once()
+
+    def test_unconfigured_launch_does_not_hide_or_auto_record(self):
+        app = self.app()
+        app.setup_complete = False
+        app.launch_background = True
+        app.background.set(True)
+        app.hide = Mock()
+        app.start = Mock()
+        app.events.put(('tray_ready', None))
+        app.events.put(('detection', Detection(True, 'Meeting')))
+        app.poll()
+        app.hide.assert_not_called()
+        app.start.assert_not_called()
 
     def test_tray_stop_and_transcript_completion(self):
         app = self.app()

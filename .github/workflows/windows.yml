@@ -21,8 +21,18 @@ jobs:
         run: |
           ./.venv/Scripts/python.exe -m unittest discover -s tests -v
           if ($LASTEXITCODE -ne 0) { throw "Tests échoués" }
+      - name: Verify packaged executable
+        shell: pwsh
+        run: |
+          $Report = Join-Path $env:RUNNER_TEMP 'compagnon-smoke.json'
+          $Process = Start-Process -FilePath '.\dist\Compagnon.exe' -ArgumentList @('--smoke-test', "`"$Report`"") -Wait -PassThru
+          if ($Process.ExitCode -ne 0) { throw "Packaged runtime check failed" }
+          if (-not (Test-Path $Report)) { throw "No smoke report produced" }
+          $Result = Get-Content $Report -Raw | ConvertFrom-Json
+          if (-not $Result.ok) { throw "Runtime check failed: $($Result.error)" }
+          Get-Content $Report
       - uses: actions/upload-artifact@v4
         with:
           name: Compagnon-Windows
-          path: dist/Compagnon/
+          path: dist/Compagnon.exe
           if-no-files-found: error
