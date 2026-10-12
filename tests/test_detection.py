@@ -10,6 +10,8 @@ class DetectionTests(unittest.TestCase):
             with self.subTest(name=name):
                 self.assertTrue(is_end_call_control(name))
         self.assertTrue(is_end_call_control('', 'hangup-button'))
+        self.assertTrue(is_end_call_control('', 'hangUpButton'))
+        self.assertTrue(is_end_call_control('Quitter l’appel'))
 
     def test_chat_and_prejoin_controls_do_not_trigger(self):
         for name in ['Join', 'Rejoindre', 'Annuler', 'Appeler', 'Chat', 'Quitter les paramètres']:
@@ -30,6 +32,7 @@ class DetectionTests(unittest.TestCase):
         control.is_visible.return_value = True
         control.window_text.return_value = button
         control.element_info.automation_id = ''
+        control.element_info.control_type = 'Button'
         window = Mock()
         window.process_id.return_value = pid
         window.window_text.return_value = 'M3S - transcript test'
@@ -43,6 +46,29 @@ class DetectionTests(unittest.TestCase):
         self.assertEqual(result.title, 'M3S - transcript test')
         self.assertFalse(self.scan(TeamsDetector(), [self.window(pid=2)]).active)
         self.assertFalse(self.scan(TeamsDetector(), [self.window(button='Join')]).active)
+
+    def test_custom_webview_control_is_detected_without_depth_filter(self):
+        window = self.window()
+        control = window.descendants.return_value[0]
+        control.element_info.control_type = 'Custom'
+        control.window_text.return_value = ''
+        control.element_info.automation_id = 'hangUpButton'
+        result = self.scan(TeamsDetector(), [window])
+        self.assertTrue(result.active)
+        window.descendants.assert_called_once_with()
+        self.assertIn('hangUpButton', result.detail)
+
+    def test_disabled_hidden_and_prejoin_controls_are_not_active_calls(self):
+        for property in ['is_enabled', 'is_visible']:
+            window = self.window()
+            getattr(window.descendants.return_value[0], property).return_value = False
+            self.assertFalse(self.scan(TeamsDetector(), [window]).active)
+        window = self.window()
+        window.descendants.return_value = []
+        result = self.scan(TeamsDetector(), [window])
+        self.assertFalse(result.active)
+        self.assertIn('0 éléments', result.detail)
+        self.assertIn('Aucun contrôle interactif', result.detail)
 
     def test_minimized_confirmed_call_is_retained(self):
         detector = TeamsDetector()

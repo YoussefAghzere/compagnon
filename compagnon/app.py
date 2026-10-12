@@ -127,7 +127,19 @@ class App:
         detail = self.detection.detail
         if time.monotonic() - self.detection_time > 10:
             detail += '\nInspection en attente ou bloquée. Utilisez la capture manuelle.'
-        messagebox.showinfo('Diagnostic Teams', detail + '\n\nLa capture commence sur un bouton de fin d’appel accessible, sans saisir le titre. Le transcript est créé après l’arrêt. Teams natif Windows uniquement.')
+        dialog = tk.Toplevel(self.root)
+        dialog.title('Diagnostic Teams — contrôles accessibles')
+        dialog.geometry('850x550')
+        from tkinter.scrolledtext import ScrolledText
+        text = ScrolledText(dialog, wrap='word')
+        text.pack(fill='both', expand=True, padx=12, pady=12)
+        text.insert('1.0', detail + '\n\nSi aucun contrôle n’est exposé, l’accessibilité de Teams/WebView2 peut être indisponible. Si Quitter apparaît sans capture, copiez le diagnostic pour analyser son type, son identifiant et son état. Ne modifiez pas les paramètres Teams de votre entreprise sans son accord.')
+        text.configure(state='disabled')
+        def copy():
+            dialog.clipboard_clear()
+            dialog.clipboard_append(text.get('1.0', 'end-1c'))
+        ttk.Button(dialog, text='Copier le diagnostic', command=copy).pack(pady=(0, 12))
+
 
     def show(self):
         self.root.deiconify()
@@ -292,7 +304,7 @@ class App:
                 active = None
                 self.detection_status.set('Inspection Teams en attente ou bloquée ; utilisez le mode manuel.')
             else:
-                self.detection_status.set(self.detection.detail)
+                self.detection_status.set(self.detection.detail.split('\n', 1)[0])
             action = self.lifecycle.observe(active, time.monotonic(), self.busy, self.recorder is not None and self.started_automatically)
             if action == 'start':
                 self.start(automatic=True)

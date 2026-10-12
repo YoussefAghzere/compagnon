@@ -84,3 +84,9 @@ L’environnement de développement cloud est Linux : la capture WASAPI, les vra
 ## Suite envisagée
 
 Compte rendu avec Qwen/Gemma, actions et décisions, historique, identification des intervenants, pause/reprise et politique de conservation. Ces fonctionnalités ne sont pas encore implémentées.
+
+### Fenêtre détectée mais aucun bouton de fin d’appel
+
+La détection inspecte désormais tout l’arbre UI Automation sans limite de profondeur et reconnaît aussi les contrôles interactifs `Custom`/`SplitButton` et les variantes d’identifiants de fin d’appel. Un bouton masqué ou désactivé ne déclenche pas la capture.
+
+Pendant un appel actif, ouvrir **Diagnostic Teams** : il affiche le nombre d’éléments accessibles, les types/noms/identifiants des contrôles interactifs et leurs états. **Copier le diagnostic** permet de transmettre ces observations pour analyser une version de Teams différente. Si aucun contrôle interactif n’est exposé, un changement de correspondance des boutons ne suffira pas : vérifier l’accessibilité Teams/WebView2 et les restrictions du poste avec l’équipe informatique. La capture manuelle reste disponible. Le diagnostic est local et peut contenir des titres ou noms affichés par Teams ; relire son contenu avant de le partager.
