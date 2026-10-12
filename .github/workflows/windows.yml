@@ -1,0 +1,28 @@
+name: Application Windows portable
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build
+        shell: pwsh
+        run: ./build.ps1
+      - name: Tests
+        shell: pwsh
+        run: |
+          ./.venv/Scripts/python.exe -m unittest discover -s tests -v
+          if ($LASTEXITCODE -ne 0) { throw "Tests échoués" }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Compagnon-Windows
+          path: dist/Compagnon/
+          if-no-files-found: error

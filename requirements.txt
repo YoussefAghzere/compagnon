@@ -1,0 +1,4 @@
+faster-whisper==1.2.1
+SoundCard==0.4.5
+numpy==2.2.6
+pyinstaller==6.16.0
