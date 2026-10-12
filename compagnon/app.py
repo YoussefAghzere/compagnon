@@ -5,18 +5,21 @@ import queue
 import tempfile
 import threading
 import time
+import sys
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
 from .audio import Recorder
-from .core import save_transcript, teams_meeting_visible, teams_windows
+from .core import save_transcript
+from .detection import TeamsDetector, Detection, CallLifecycle
 
 
 class App:
     def __init__(self, root):
         self.root = root
-        root.title('Compagnon — transcription locale')
-        root.geometry('700x600')
+        root.title('Compagnon 0.1 — transcription locale')
+        root.geometry('700x680')
+        root.minsize(650, 620)
         self.config_path = Path(os.getenv('LOCALAPPDATA', str(Path.home()))) / 'Compagnon' / 'settings.json'
         try:
             config = json.loads(self.config_path.read_text(encoding='utf-8'))
@@ -25,18 +28,22 @@ class App:
         self.folder = tk.StringVar(value=config.get('folder', str(Path.home() / 'Documents' / 'Compagnon')))
         self.title = tk.StringVar(value='Réunion Teams')
         self.model = tk.StringVar(value=config.get('model', 'base'))
-        self.mic = tk.BooleanVar(value=True)
-        self.auto = tk.BooleanVar(value=False)
-        self.fragment = tk.StringVar(value=config.get('teams_fragment', ''))
+        self.mic = tk.BooleanVar(value=bool(config.get('microphone', True)))
+        self.auto = tk.BooleanVar(value=bool(config.get('automatic', False)))
+        self.background = tk.BooleanVar(value=bool(config.get('background', False)))
         self.detection_status = tk.StringVar(value='Détection automatique désactivée.')
-        self.pending_auto = False
+        self.lifecycle = CallLifecycle()
         self.status = tk.StringVar(value='Prêt — démarrez une réunion ou importez un enregistrement.')
         self.events = queue.Queue()
         self.busy = False
         self.recorder = None
         self.started_automatically = False
-        self.absent_since = None
-        self.last_detected = False
+        self.detection = Detection(None, detail='Inspection Teams en attente…')
+        self.detection_time = 0.0
+        self.worker_stop = threading.Event()
+        self.tray = None
+        self.tray_ready = False
+        self.recording = False
         box = ttk.Frame(root, padding=20)
         box.pack(fill='both', expand=True)
         ttk.Label(box, text='Compagnon', font=('', 20)).pack(anchor='w')
@@ -53,12 +60,9 @@ class App:
         ttk.Label(row, text='Modèle Whisper').pack(side='left')
         ttk.Combobox(row, textvariable=self.model, values=['tiny', 'base', 'small', 'medium'], state='readonly', width=10).pack(side='left', padx=10)
         ttk.Checkbutton(box, text='Inclure mon microphone avec le son du PC', variable=self.mic).pack(anchor='w')
-        ttk.Checkbutton(box, text='Détection Teams expérimentale (titres des fenêtres)', variable=self.auto, command=self.toggle_auto).pack(anchor='w')
-        ttk.Label(box, text='Fragment du titre de l’appel (facultatif ; sinon réunion/meeting/appel/call)').pack(anchor='w', pady=(8, 0))
-        row = ttk.Frame(box)
-        row.pack(fill='x')
-        ttk.Entry(row, textvariable=self.fragment).pack(side='left', fill='x', expand=True)
-        ttk.Button(row, text='Diagnostic Teams', command=self.diagnose_teams).pack(side='right')
+        ttk.Checkbutton(box, text='Capture automatique des appels Teams (expérimentale)', variable=self.auto, command=self.toggle_auto).pack(anchor='w')
+        ttk.Checkbutton(box, text='Démarrer dans la zone de notification', variable=self.background, command=self.persist_settings).pack(anchor='w')
+        ttk.Button(box, text='Diagnostic Teams', command=self.diagnose_teams).pack(anchor='w', pady=6)
         ttk.Label(box, textvariable=self.detection_status, wraplength=650).pack(anchor='w', pady=4)
         ttk.Label(box, text='Informez les participants et respectez les règles de votre entreprise.', wraplength=600).pack(anchor='w', pady=10)
         row = ttk.Frame(box)
@@ -70,7 +74,17 @@ class App:
         self.import_button = ttk.Button(row, text='Importer un audio', command=self.import_audio)
         self.import_button.pack(side='left')
         ttk.Label(box, textvariable=self.status, wraplength=600).pack(anchor='w', pady=10)
-        root.protocol('WM_DELETE_WINDOW', self.close)
+        root.protocol('WM_DELETE_WINDOW', self.hide)
+        ttk.Button(box, text='Masquer dans la zone de notification', command=self.hide).pack(anchor='w')
+        ttk.Button(box, text='Quitter Compagnon', command=self.close).pack(anchor='w', pady=4)
+        if sys.platform == 'win32':
+            try:
+                from .tray import Tray
+                self.tray = Tray(self.events)
+                self.tray.start()
+            except Exception as error:
+                self.status.set(f'Icône indisponible : {error}. La fenêtre reste ouverte.')
+        threading.Thread(target=self.detection_worker, daemon=True).start()
         root.after(200, self.poll)
 
     def choose_folder(self):
@@ -80,24 +94,64 @@ class App:
 
     def save_settings(self):
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        self.config_path.write_text(json.dumps({'folder': self.folder.get(), 'model': self.model.get(), 'teams_fragment': self.fragment.get()}), encoding='utf-8')
+        self.config_path.write_text(json.dumps({'folder': self.folder.get(), 'model': self.model.get(), 'automatic': self.auto.get(), 'background': self.background.get(), 'microphone': self.mic.get()}), encoding='utf-8')
+
+    def persist_settings(self):
+        try:
+            self.save_settings()
+        except OSError as error:
+            messagebox.showerror('Configuration', str(error))
 
     def toggle_auto(self):
         if self.auto.get():
-            accepted = messagebox.askokcancel('Détection expérimentale', 'Une fenêtre Teams correspondant aux mots réunion/appel ou au fragment choisi peut déclencher la capture de tout le son du PC. Cette détection peut se tromper. Activez-la uniquement après avoir informé les participants.')
+            self.show()
+            accepted = messagebox.askokcancel('Capture automatique', 'Compagnon détecte les boutons de fin d’appel Teams et capture tout le son du PC, même avec sa fenêtre masquée. Cette détection est expérimentale. Informez les participants et respectez les règles de votre entreprise. Activer et mémoriser ce choix ?')
             self.auto.set(accepted)
-        self.last_detected = False
-        self.pending_auto = False
-        self.detection_status.set('En attente d’une fenêtre d’appel correspondante.' if self.auto.get() else 'Détection automatique désactivée.')
+        self.lifecycle = CallLifecycle()
+        self.detection_status.set('En attente d’un appel Teams actif.' if self.auto.get() else 'Capture automatique désactivée.')
+        self.persist_settings()
+
+    def detection_worker(self):
+        # Import pywinauto in this worker so its COM apartment belongs to this thread.
+        detector = TeamsDetector()
+        while not self.worker_stop.is_set():
+            try:
+                result = detector.scan()
+            except Exception as error:
+                result = Detection(None, detail=f'Détection indisponible : {type(error).__name__}: {error}')
+            self.events.put(('detection', result))
+            self.worker_stop.wait(2)
 
     def diagnose_teams(self):
+        self.show()
+        detail = self.detection.detail
+        if time.monotonic() - self.detection_time > 10:
+            detail += '\nInspection en attente ou bloquée. Utilisez la capture manuelle.'
+        messagebox.showinfo('Diagnostic Teams', detail + '\n\nLa capture commence sur un bouton de fin d’appel accessible, sans saisir le titre. Le transcript est créé après l’arrêt. Teams natif Windows uniquement.')
+
+    def show(self):
+        self.root.deiconify()
+        self.root.lift()
+
+    def hide(self):
+        if not self.tray_ready:
+            messagebox.showinfo('Compagnon', 'L’icône n’est pas disponible. La fenêtre doit rester ouverte ; elle peut être réduite.')
+            return
+        self.persist_settings()
+        self.root.withdraw()
+
+    def notify(self, text):
+        if self.tray_ready:
+            self.tray.notify(text)
+
+    def open_folder(self):
         try:
-            windows = teams_windows()
-            lines = [f"{'CORRESPOND' if window.matches(self.fragment.get()) else 'IGNORÉ'} : {window.title} ({Path(window.process).name or 'titre seulement'})" for window in windows]
-            text = '\n'.join(lines) if lines else 'Aucune fenêtre Teams détectée.'
-            messagebox.showinfo('Diagnostic Teams', text + '\n\nSi le titre de l’appel est ignoré, renseignez un fragment distinctif de ce titre. Évitez « Teams » seul : cela peut capturer hors réunion. Le transcript est créé après l’arrêt de la capture.')
+            folder = Path(self.folder.get())
+            folder.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(folder))
         except Exception as error:
-            messagebox.showerror('Diagnostic Teams', str(error))
+            self.show()
+            messagebox.showerror('Dossier des transcripts', str(error))
 
     def set_busy(self, busy):
         self.busy = busy
@@ -115,14 +169,20 @@ class App:
             return
         try:
             options = self.options()
+            if automatic and self.detection.title:
+                options = (options[0], self.detection.title, options[2])
             handle, path = tempfile.mkstemp(suffix='.wav', prefix='compagnon-')
             os.close(handle)
         except Exception as error:
+            self.auto.set(False)
+            self.persist_settings()
+            self.show()
             messagebox.showerror('Compagnon', str(error))
             return
         self.recorder = Recorder(Path(path), self.mic.get())
+        if self.detection.active is True:
+            self.lifecycle.handled = True
         self.started_automatically = automatic
-        self.absent_since = None
         self.set_busy(True)
         self.status.set('Ouverture des périphériques audio…')
         recorder = self.recorder
@@ -139,7 +199,10 @@ class App:
 
     def stop(self):
         if self.recorder:
+            self.lifecycle.handled = True
+            self.recording = False
             self.recorder.stop()
+            self.recorder = None
             self.stop_button.configure(state='disabled')
             self.status.set('Fin de capture — préparation de la transcription…')
 
@@ -178,51 +241,77 @@ class App:
             while True:
                 kind, value = self.events.get_nowait()
                 if kind == 'recording':
+                    if self.recorder is None:
+                        continue
+                    self.recording = True
+                    self.notify('Capture démarrée — son du PC et microphone selon votre choix.')
                     self.status.set('● Capture en cours — son du PC et micro selon votre choix.')
                     self.stop_button.configure(state='normal')
+                elif kind == 'tray_ready':
+                    self.tray_ready = True
+                    if self.background.get():
+                        self.hide()
+                elif kind == 'tray_error':
+                    self.tray_ready = False
+                    self.show()
+                    self.status.set(f'Icône indisponible : {value}')
+                elif kind == 'command':
+                    if value == 'toggle_auto':
+                        self.auto.set(not self.auto.get())
+                        self.toggle_auto()
+                    else:
+                        {'show': self.show, 'start': self.start, 'stop': self.stop, 'open_folder': self.open_folder, 'quit': self.close}[value]()
+                    if self.worker_stop.is_set():
+                        return
+                elif kind == 'detection':
+                    self.detection = value
+                    self.detection_time = time.monotonic()
                 elif kind == 'status':
                     self.recorder = None
+                    self.recording = False
                     self.stop_button.configure(state='disabled')
                     self.status.set(value)
                 else:
                     self.recorder = None
+                    self.recording = False
                     self.stop_button.configure(state='disabled')
                     self.set_busy(False)
                     self.status.set(f'Transcript sauvegardé : {value}' if kind == 'done' else f'Erreur : {value}')
+                    self.notify('Transcript sauvegardé.' if kind == 'done' else 'Erreur : ouvrez Compagnon pour consulter le détail.')
                     if kind == 'error':
                         self.auto.set(False)
                         self.detection_status.set('Détection désactivée après une erreur. Consultez le message ci-dessous.')
+                        self.persist_settings()
+                        self.show()
                         messagebox.showerror('Compagnon', value)
         except queue.Empty:
             pass
         if self.auto.get():
-            try:
-                detected = teams_meeting_visible(self.fragment.get())
-            except Exception as error:
-                self.auto.set(False)
-                self.detection_status.set(f'Détection interrompue : {error}. Utilisez le mode manuel.')
-                detected = False
-            if self.auto.get():
-                self.detection_status.set('Fenêtre correspondante détectée — transcription après arrêt.' if detected else 'Aucun appel correspondant détecté — utilisez Diagnostic Teams.')
-            if detected and not self.last_detected:
-                self.pending_auto = True
-            if not detected:
-                self.pending_auto = False
-            if detected and self.pending_auto and not self.busy:
-                self.pending_auto = False
+            active = self.detection.active
+            if time.monotonic() - self.detection_time > 10:
+                active = None
+                self.detection_status.set('Inspection Teams en attente ou bloquée ; utilisez le mode manuel.')
+            else:
+                self.detection_status.set(self.detection.detail)
+            action = self.lifecycle.observe(active, time.monotonic(), self.busy, self.recorder is not None and self.started_automatically)
+            if action == 'start':
                 self.start(automatic=True)
-            if self.recorder and self.started_automatically:
-                if detected:
-                    self.absent_since = None
-                else:
-                    self.absent_since = self.absent_since or time.monotonic()
-                    if time.monotonic() - self.absent_since > 20:
-                        self.stop()
-            self.last_detected = detected
+            elif action == 'stop':
+                self.stop()
+        else:
+            self.detection_status.set('Capture automatique désactivée.')
+        if self.tray_ready:
+            try:
+                self.tray.update(self.auto.get(), self.busy, self.recording)
+            except Exception as error:
+                self.tray_ready = False
+                self.show()
+                self.status.set(f'Icône indisponible : {error}')
         self.root.after(500, self.poll)
 
     def close(self):
         if self.busy:
+            self.show()
             messagebox.showinfo('Traitement en cours', 'Arrêtez la capture et attendez la fin de la transcription avant de fermer.')
             return
         try:
@@ -230,6 +319,9 @@ class App:
         except OSError as error:
             messagebox.showerror('Configuration', str(error))
             return
+        self.worker_stop.set()
+        if self.tray:
+            self.tray.stop()
         self.root.destroy()
 
 

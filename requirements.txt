@@ -3,3 +3,7 @@ SoundCard==0.4.5
 numpy==2.2.6
 pyinstaller==6.16.0
 av==16.0.1
+pystray==0.19.5
+Pillow==11.3.0
+psutil==7.1.0
+pywinauto==0.6.9; sys_platform == 'win32'
