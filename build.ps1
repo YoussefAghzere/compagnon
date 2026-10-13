@@ -50,8 +50,33 @@ if ($LASTEXITCODE -ne 0) { throw "Installation echouee" }
 & $BuildPython -m pip check
 if ($LASTEXITCODE -ne 0) { throw "Dependances incompatibles" }
 $BundleMode = if ($Folder) { "--onedir" } else { "--onefile" }
-& $BuildPython -m PyInstaller --noconfirm --clean $BundleMode --windowed --name Compagnon --icon assets\compagnon.ico --collect-data faster_whisper --collect-binaries ctranslate2 --collect-data soundcard --collect-all pywinauto --collect-all comtypes --hidden-import pystray._win32 main.py
-if ($LASTEXITCODE -ne 0) { throw "Compilation echouee" }
+# Each build gets a fresh working directory outside the synced checkout.
+$BuildScratch = Join-Path ([System.IO.Path]::GetTempPath()) ("CompagnonBuild-" + [guid]::NewGuid().ToString("N"))
+$WorkPath = Join-Path $BuildScratch "work"
+$SpecPath = Join-Path $BuildScratch "spec"
+$PreviousPyInstallerCache = $env:PYINSTALLER_CONFIG_DIR
+$BuildSucceeded = $false
+New-Item -ItemType Directory -Path $WorkPath, $SpecPath -Force | Out-Null
+try {
+    $env:PYINSTALLER_CONFIG_DIR = Join-Path $BuildScratch "cache"
+    Write-Host "Fichiers temporaires de compilation : $BuildScratch"
+    & $BuildPython -m PyInstaller --noconfirm $BundleMode --workpath $WorkPath --specpath $SpecPath --distpath (Join-Path $PSScriptRoot "dist") --windowed --name Compagnon --icon (Join-Path $PSScriptRoot "assets\compagnon.ico") --collect-data faster_whisper --collect-binaries ctranslate2 --collect-data soundcard --collect-all pywinauto --collect-all comtypes --hidden-import pystray._win32 (Join-Path $PSScriptRoot "main.py")
+    if ($LASTEXITCODE -ne 0) { throw "Compilation echouee. Diagnostic conserve dans $BuildScratch" }
+    $BuildSucceeded = $true
+} finally {
+    if ($null -eq $PreviousPyInstallerCache) {
+        Remove-Item Env:\PYINSTALLER_CONFIG_DIR -ErrorAction SilentlyContinue
+    } else {
+        $env:PYINSTALLER_CONFIG_DIR = $PreviousPyInstallerCache
+    }
+    if ($BuildSucceeded) {
+        try {
+            Remove-Item -LiteralPath $BuildScratch -Recurse -Force
+        } catch {
+            Write-Warning "Compilation terminee, mais nettoyage temporaire impossible : $BuildScratch"
+        }
+    }
+}
 if ($Folder) {
     Write-Host "Application : dist\Compagnon\Compagnon.exe (distribuer le dossier entier)."
 } else {

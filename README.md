@@ -100,3 +100,11 @@ Avant distribution : vérifier la configuration toujours accessible, le deuxièm
 ## Prochaines améliorations
 
 Préparation/vérification du modèle avant la première réunion, indicateur de niveau sonore, récupération d’audio après une erreur, historique consultable, compte rendu local avec actions et décisions, exécutable signé et mises à jour contrôlées. Ces fonctions ne sont pas encore implémentées.
+
+### Erreur de nettoyage `build\Compagnon\localpycs`
+
+Un `WinError 5` dans ce dossier signifie que le nettoyage des fichiers de travail est refuse ; supprimer `dist` ne le resout pas. OneDrive, un processus ou des droits d'acces peuvent etre en cause, sans que le log permette de trancher.
+
+Le script utilise desormais un dossier de travail/cache unique sous le dossier temporaire Windows, avec un chemin absolu pour le code et l'icone. Il ne touche pas a l'ancien dossier `build` et n'utilise plus le nettoyage global `--clean`. `dist\Compagnon.exe` reste la sortie finale. Les fichiers temporaires sont supprimes apres succes et conserves pour diagnostic en cas d'echec ; un echec de nettoyage apres compilation ne fait pas echouer le build.
+
+Quitter Compagnon via son icone, faire `git pull origin main`, puis relancer `.\build.ps1`. Cette correction du script reste a verifier sur Windows.
