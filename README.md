@@ -112,3 +112,7 @@ Quitter Compagnon via son icone, faire `git pull origin main`, puis relancer `.\
 ### Langue de la réunion
 
 La langue n’est plus forcée en français : Whisper la détecte au début de l’audio et le mode `transcribe` conserve la langue parlée, sans traduction demandée. Une réunion principalement anglaise est transcrite en anglais, une réunion principalement française en français. La détection peut se tromper, notamment sur un début très court ou ambigu ; les changements de langue au sein d’une même réunion ne sont pas gérés par une détection séparée par segment. Recompiler ou télécharger un nouveau `.exe` pour appliquer cette modification.
+
+### Lisibilité de l’interface
+
+La fenêtre utilise Segoe UI 12 points pour les contrôles, des titres plus grands et des textes secondaires contrastés. Les onglets défilent à la molette ; la navigation clavier fait apparaître le contrôle sélectionné. Les textes se réajustent à la largeur et les actions de capture sont empilées pour rester accessibles. La taille initiale tient compte de l’écran et l’application demande la prise en charge du DPI Windows avant de créer sa fenêtre. Le rendu final aux différentes échelles Windows reste à vérifier sur le poste.

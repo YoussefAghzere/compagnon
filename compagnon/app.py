@@ -20,8 +20,10 @@ class App:
     def __init__(self, root, launch_background=False):
         self.root = root
         root.title('Compagnon 0.2')
-        root.geometry('860x800')
-        root.minsize(800, 760)
+        width = min(980, max(480, root.winfo_screenwidth() - 120))
+        height = min(820, max(420, root.winfo_screenheight() - 100))
+        root.geometry(f'{width}x{height}')
+        root.minsize(min(640, width), min(500, height))
         root.configure(background='#f3f5fa')
         from PIL import ImageTk
         from .tray import Tray
@@ -75,19 +77,27 @@ class App:
     def build_ui(self):
         style = ttk.Style(self.root)
         style.theme_use('clam')
-        style.configure('.', font=('Segoe UI', 10))
+        from tkinter import font
+        from .ui import ScrollablePanel
+        for name in ('TkDefaultFont', 'TkTextFont', 'TkMenuFont'):
+            font.nametofont(name).configure(family='Segoe UI', size=12)
+        self.root.option_add('*TCombobox*Listbox.font', ('Segoe UI', 12))
+        style.configure('.', font=('Segoe UI', 12))
         style.configure('TFrame', background='#f3f5fa')
         style.configure('Card.TFrame', background='white')
         style.configure('TLabel', background='#f3f5fa', foreground='#253047')
-        style.configure('Card.TLabel', background='white')
-        style.configure('Heading.TLabel', font=('Segoe UI', 23, 'bold'), foreground='#16233b')
-        style.configure('Section.TLabel', background='white', font=('Segoe UI', 11, 'bold'))
-        style.configure('TButton', padding=(12, 8))
-        style.configure('Primary.TButton', background='#2563eb', foreground='white', padding=(18, 10))
+        style.configure('Card.TLabel', background='white', foreground='#253047')
+        style.configure('Hint.TLabel', background='white', foreground='#526077', font=('Segoe UI', 11))
+        style.configure('TEntry', padding=(10, 9))
+        style.configure('TCombobox', padding=(10, 8))
+        style.configure('Heading.TLabel', font=('Segoe UI', 28, 'bold'), foreground='#16233b')
+        style.configure('Section.TLabel', background='white', font=('Segoe UI', 15, 'bold'))
+        style.configure('TButton', padding=(14, 10))
+        style.configure('Primary.TButton', background='#2563eb', foreground='white', padding=(20, 12))
         style.map('Primary.TButton', background=[('active', '#1d4ed8'), ('disabled', '#9ca3af')])
-        style.configure('TCheckbutton', background='white', padding=4)
+        style.configure('TCheckbutton', background='white', padding=(0, 7))
         style.configure('TNotebook', background='#f3f5fa', borderwidth=0)
-        style.configure('TNotebook.Tab', padding=(18, 10))
+        style.configure('TNotebook.Tab', padding=(20, 12))
         outer = ttk.Frame(self.root, padding=24)
         outer.pack(fill='both', expand=True)
         header = ttk.Frame(outer)
@@ -97,12 +107,13 @@ class App:
         ttk.Label(outer, text='Vos réunions deviennent des notes. Votre audio reste sur votre PC.').pack(anchor='w', pady=(0, 16))
         notebook = ttk.Notebook(outer)
         notebook.pack(fill='both', expand=True)
-        home = ttk.Frame(notebook, style='Card.TFrame', padding=20)
-        settings = ttk.Frame(notebook, style='Card.TFrame', padding=20)
-        notebook.add(home, text='Tableau de bord')
-        notebook.add(settings, text='Configuration')
+        home_panel = ScrollablePanel(notebook)
+        settings_panel = ScrollablePanel(notebook)
+        home, settings = home_panel.content, settings_panel.content
+        notebook.add(home_panel, text='Tableau de bord')
+        notebook.add(settings_panel, text='Configuration')
         if not self.setup_complete:
-            notebook.select(settings)
+            notebook.select(settings_panel)
         ttk.Label(home, text='Activité', style='Section.TLabel').pack(anchor='w')
         ttk.Label(home, textvariable=self.status, style='Card.TLabel', wraplength=710).pack(anchor='w', pady=14)
         ttk.Label(home, textvariable=self.detection_status, style='Card.TLabel', wraplength=710).pack(anchor='w', pady=(0, 16))
@@ -112,34 +123,37 @@ class App:
         row = ttk.Frame(home, style='Card.TFrame')
         row.pack(fill='x', pady=8)
         self.start_button = ttk.Button(row, text='Démarrer', command=self.start, style='Primary.TButton')
-        self.start_button.pack(side='left')
+        self.start_button.pack(fill='x', pady=4)
         self.stop_button = ttk.Button(row, text='Arrêter et transcrire', command=self.stop, state='disabled')
-        self.stop_button.pack(side='left', padx=8)
+        self.stop_button.pack(fill='x', pady=4)
         self.import_button = ttk.Button(row, text='Importer un audio', command=self.import_audio)
-        self.import_button.pack(side='left')
+        self.import_button.pack(fill='x', pady=4)
         ttk.Button(home, text='Ouvrir mes transcripts', command=self.open_folder).pack(anchor='w', pady=10)
         ttk.Button(home, text='Diagnostic Teams', command=self.diagnose_teams).pack(anchor='w')
-        ttk.Label(settings, text='Une configuration, puis Compagnon vous accompagne.', style='Section.TLabel').pack(anchor='w', pady=(0, 16))
-        ttk.Label(settings, text='Dossier des transcripts', style='Card.TLabel').pack(anchor='w')
+        ttk.Label(settings, text='Configurez une fois. Retrouvez vos réunions en texte.', style='Section.TLabel').pack(anchor='w', pady=(0, 16))
+        ttk.Label(settings, text='1. Où enregistrer vos transcripts ?', style='Card.TLabel').pack(anchor='w')
         row = ttk.Frame(settings, style='Card.TFrame')
         row.pack(fill='x', pady=(6, 14))
         ttk.Entry(row, textvariable=self.folder).pack(side='left', fill='x', expand=True)
         ttk.Button(row, text='Parcourir…', command=self.choose_folder).pack(side='right', padx=(8, 0))
-        ttk.Label(settings, text='Qualité de transcription', style='Card.TLabel').pack(anchor='w')
+        ttk.Label(settings, text='2. Choisissez la qualité de transcription', style='Card.TLabel').pack(anchor='w')
         ttk.Combobox(settings, textvariable=self.model, values=['tiny', 'base', 'small', 'medium'], state='readonly', width=20).pack(anchor='w', pady=6)
-        ttk.Label(settings, text='tiny : rapide  •  base : équilibré  •  small / medium : plus précis, plus lents', style='Card.TLabel').pack(anchor='w', pady=(0, 12))
-        ttk.Label(settings, text='Langue détectée automatiquement • transcription dans la langue parlée', style='Card.TLabel').pack(anchor='w', pady=(0, 8))
+        ttk.Label(settings, text='Tiny : rapide · Base : équilibré · Small / Medium : plus précis, mais plus lents', style='Hint.TLabel').pack(anchor='w', pady=(0, 12))
+        ttk.Label(settings, text='La langue est détectée automatiquement. Le texte conserve la langue parlée.', style='Hint.TLabel').pack(anchor='w', pady=(0, 8))
+        ttk.Label(settings, text='3. Capture et démarrage', style='Section.TLabel').pack(anchor='w', pady=(12, 8))
         ttk.Checkbutton(settings, text='Inclure mon microphone avec le son du PC', variable=self.mic).pack(anchor='w')
         ttk.Checkbutton(settings, text='Capturer automatiquement les appels Teams', variable=self.auto, command=self.toggle_auto).pack(anchor='w')
         ttk.Checkbutton(settings, text='Lancer Compagnon à l’ouverture de ma session Windows', variable=self.autostart).pack(anchor='w')
         ttk.Checkbutton(settings, text='Masquer la fenêtre au démarrage automatique', variable=self.background).pack(anchor='w')
-        ttk.Label(settings, text='Le premier téléchargement du modèle nécessite Internet.\nInformez les participants avant toute capture. La détection Teams reste expérimentale.', style='Card.TLabel', wraplength=710).pack(anchor='w', pady=14)
+        ttk.Label(settings, text='Le premier téléchargement du modèle nécessite Internet.\nInformez les participants avant toute capture. La détection Teams reste expérimentale.', style='Hint.TLabel', wraplength=710).pack(anchor='w', pady=18)
         ttk.Button(settings, text='Enregistrer et activer', style='Primary.TButton', command=self.complete_setup).pack(anchor='w')
         footer = ttk.Frame(outer)
         footer.pack(fill='x', pady=(16, 0))
-        ttk.Label(footer, text='Bleu : prêt   •   Rouge : capture   •   Orange : transcription', foreground='#64748b').pack(side='left')
-        ttk.Button(footer, text='Masquer', command=self.hide).pack(side='right')
-        ttk.Button(footer, text='Quitter', command=self.close).pack(side='right', padx=8)
+        ttk.Label(footer, text='Bleu : prêt · Rouge : capture · Orange : traitement', foreground='#64748b').pack(anchor='w', pady=(0, 10))
+        actions = ttk.Frame(footer)
+        actions.pack(fill='x')
+        ttk.Button(actions, text='Masquer dans la zone de notification', command=self.hide).pack(side='right')
+        ttk.Button(actions, text='Quitter', command=self.close).pack(side='right', padx=8)
 
     def restore_if_tray_unavailable(self):
         if not self.tray_ready:
@@ -440,6 +454,12 @@ def main():
     try:
         if not instance.primary:
             return
+        if sys.platform == 'win32':
+            try:
+                import ctypes
+                ctypes.windll.shcore.SetProcessDpiAwareness(1)
+            except (AttributeError, OSError):
+                pass
         root = tk.Tk()
         app = App(root, launch_background=arguments.background)
         def activation():
