@@ -116,3 +116,9 @@ La langue n’est plus forcée en français : Whisper la détecte au début de l
 ### Lisibilité de l’interface
 
 La fenêtre utilise Segoe UI 12 points pour les contrôles, des titres plus grands et des textes secondaires contrastés. Les onglets défilent à la molette ; la navigation clavier fait apparaître le contrôle sélectionné. Les textes se réajustent à la largeur et les actions de capture sont empilées pour rester accessibles. La taille initiale tient compte de l’écran et l’application demande la prise en charge du DPI Windows avant de créer sa fenêtre. Le rendu final aux différentes échelles Windows reste à vérifier sur le poste.
+
+### Progression de transcription
+
+Une barre et un message restent visibles au-dessus des onglets, y compris dans Configuration. Le chargement du modèle/préparation audio affiche une animation et le temps écoulé. Pendant la transcription, le pourcentage correspond à la position du dernier segment produit dans la durée totale d’audio ; il progresse par paliers et n’est pas une estimation du temps restant. Des silences peuvent faire avancer la position, et la barre reste au maximum à 99 % jusqu’à la sauvegarde réussie du transcript. Un délai entre segments ne permet pas à lui seul de conclure à un blocage.
+
+La diarisation (Speaker 1 / Speaker 2) et l’association aux noms Teams ne sont pas encore implémentées. Le flux audio système mélange les voix distantes ; leur attribution demande un traitement supplémentaire et la liste des participants ne permet pas de lier une voix à un nom.

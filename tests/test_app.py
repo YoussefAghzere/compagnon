@@ -34,6 +34,12 @@ class AppTests(unittest.TestCase):
         app.started_automatically = False
         app.tray = Mock()
         app.tray_ready = True
+        app.progress_bar = Mock()
+        app.progress_bar.__setitem__ = Mock()
+        app.progress_text = Value('')
+        app.progress_mode = 'idle'
+        app.job_started = None
+        app.audio_processed = app.audio_duration = 0
         app.status = Value('')
         app.detection_status = Value('')
         app.start_button = Mock()
@@ -99,6 +105,24 @@ class AppTests(unittest.TestCase):
         self.assertFalse(app.busy)
         self.assertIn('reunion.txt', app.status.get())
         app.tray.notify.assert_called_with('Transcript sauvegardé.')
+
+    def test_loading_and_segment_progress_only_reach_100_after_export(self):
+        app = self.app()
+        app.events.put(('status', 'Chargement du modèle'))
+        app.poll()
+        app.progress_bar.start.assert_called_once_with(15)
+        self.assertIn('Temps écoulé', app.progress_text.get())
+        app.events.put(('progress', (45, 90)))
+        app.poll()
+        app.progress_bar.__setitem__.assert_called_with('value', 50)
+        self.assertIn('00:00:45 / 00:01:30', app.progress_text.get())
+        app.events.put(('progress', (90, 90)))
+        app.poll()
+        app.progress_bar.__setitem__.assert_called_with('value', 99)
+        app.events.put(('done', 'meeting.txt'))
+        app.poll()
+        app.progress_bar.__setitem__.assert_called_with('value', 100)
+        self.assertIn('Transcript sauvegardé', app.progress_text.get())
 
     def test_close_cross_hides_instead_of_stopping_worker(self):
         app = self.app()

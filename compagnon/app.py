@@ -50,6 +50,11 @@ class App:
         self.lifecycle = CallLifecycle()
         self.status = tk.StringVar(value='Prêt — démarrez une réunion ou importez un enregistrement.')
         self.events = queue.Queue()
+        self.progress_text = tk.StringVar(value='La progression s’affichera pendant la transcription.')
+        self.progress_mode = 'idle'
+        self.job_started = None
+        self.audio_processed = 0.0
+        self.audio_duration = 0.0
         self.busy = False
         self.recorder = None
         self.started_automatically = False
@@ -105,6 +110,10 @@ class App:
         ttk.Label(header, text='Compagnon', style='Heading.TLabel').pack(side='left')
         ttk.Label(header, text='0.2  •  PRIVÉ & LOCAL', foreground='#64748b').pack(side='right')
         ttk.Label(outer, text='Vos réunions deviennent des notes. Votre audio reste sur votre PC.').pack(anchor='w', pady=(0, 16))
+        ttk.Label(outer, textvariable=self.status, wraplength=850).pack(anchor='w', pady=(0, 6))
+        self.progress_bar = ttk.Progressbar(outer, mode='determinate', maximum=100)
+        self.progress_bar.pack(fill='x', pady=(0, 6))
+        ttk.Label(outer, textvariable=self.progress_text, foreground='#526077', wraplength=850).pack(anchor='w', pady=(0, 16))
         notebook = ttk.Notebook(outer)
         notebook.pack(fill='both', expand=True)
         home_panel = ScrollablePanel(notebook)
@@ -346,8 +355,13 @@ class App:
         self.events.put(('status', 'Chargement du modèle (téléchargement au premier usage), puis transcription…'))
         cache = self.config_path.parent / 'models'
         engine = WhisperModel(model, device='cpu', compute_type='int8', download_root=str(cache))
-        segments, _ = engine.transcribe(str(path), language=None, task='transcribe', vad_filter=True)
-        lines = [(segment.start, segment.text) for segment in segments]
+        segments, info = engine.transcribe(str(path), language=None, task='transcribe', vad_filter=True)
+        duration = max(0.0, float(info.duration))
+        self.events.put(('progress', (0.0, duration)))
+        lines = []
+        for segment in segments:
+            lines.append((segment.start, segment.text))
+            self.events.put(('progress', (min(duration, max(0.0, segment.end)), duration)))
         if not lines:
             raise RuntimeError('Aucune parole détectée. Vérifiez le fichier ou les périphériques audio.')
         output = save_transcript(folder, title, lines)
@@ -361,6 +375,11 @@ class App:
                     if self.recorder is None:
                         continue
                     self.recording = True
+                    self.progress_bar.stop()
+                    self.progress_bar.configure(mode='determinate')
+                    self.progress_bar['value'] = 0
+                    self.progress_mode = 'idle'
+                    self.progress_text.set('Capture en cours. La transcription commencera après l’arrêt.')
                     self.notify('Capture démarrée — son du PC et microphone selon votre choix.')
                     self.status.set('● Capture en cours — son du PC et micro selon votre choix.')
                     self.stop_button.configure(state='normal')
@@ -383,16 +402,32 @@ class App:
                 elif kind == 'detection':
                     self.detection = value
                     self.detection_time = time.monotonic()
+                elif kind == 'progress':
+                    self.progress_mode = 'transcribing'
+                    self.progress_bar.stop()
+                    self.progress_bar.configure(mode='determinate')
+                    self.audio_processed, self.audio_duration = value
+                    self.progress_bar['value'] = min(99, 100 * self.audio_processed / self.audio_duration) if self.audio_duration else 0
+                    self.status.set('Transcription en cours — sauvegarde du fichier à la fin.')
                 elif kind == 'status':
                     self.recorder = None
                     self.recording = False
                     self.stop_button.configure(state='disabled')
                     self.status.set(value)
+                    self.job_started = time.monotonic()
+                    self.progress_mode = 'loading'
+                    self.audio_processed = self.audio_duration = 0.0
+                    self.progress_bar.configure(mode='indeterminate')
+                    self.progress_bar.start(15)
                 else:
                     self.recorder = None
                     self.recording = False
                     self.stop_button.configure(state='disabled')
                     self.set_busy(False)
+                    self.progress_bar.stop()
+                    self.progress_bar.configure(mode='determinate')
+                    self.progress_bar['value'] = 100 if kind == 'done' else 0
+                    self.progress_mode = 'done' if kind == 'done' else 'error'
                     self.status.set(f'Transcript sauvegardé : {value}' if kind == 'done' else f'Erreur : {value}')
                     self.notify('Transcript sauvegardé.' if kind == 'done' else 'Erreur : ouvrez Compagnon pour consulter le détail.')
                     if kind == 'error':
@@ -424,7 +459,29 @@ class App:
                 self.tray_ready = False
                 self.show()
                 self.status.set(f'Icône indisponible : {error}')
+        self.refresh_progress()
         self.root.after(500, self.poll)
+
+    def refresh_progress(self):
+        def clock(seconds):
+            seconds = max(0, int(seconds))
+            return f'{seconds // 3600:02d}:{seconds // 60 % 60:02d}:{seconds % 60:02d}'
+        if self.progress_mode == 'idle':
+            return
+        elapsed = clock(time.monotonic() - self.job_started) if self.job_started is not None else '00:00:00'
+        if self.progress_mode == 'loading':
+            self.progress_text.set(f'Chargement du modèle / préparation audio · Temps écoulé : {elapsed}')
+        elif self.progress_mode == 'transcribing':
+            percent = min(99, 100 * self.audio_processed / self.audio_duration) if self.audio_duration else 0
+            self.progress_text.set(f'{percent:.0f} % · Audio traité : {clock(self.audio_processed)} / {clock(self.audio_duration)} · Temps écoulé : {elapsed}')
+        elif self.progress_mode == 'done':
+            self.progress_text.set(f'100 % · Transcript sauvegardé · Durée du traitement : {elapsed}')
+            self.job_started = None
+            self.progress_mode = 'idle'
+        elif self.progress_mode == 'error':
+            self.progress_text.set(f'Traitement interrompu après {elapsed} · Consultez le message d’erreur.')
+            self.job_started = None
+            self.progress_mode = 'idle'
 
     def close(self):
         if self.busy:
