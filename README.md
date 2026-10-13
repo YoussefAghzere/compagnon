@@ -1,6 +1,6 @@
 # Compagnon 0.2
 
-Application Windows de transcription locale des réunions Teams : une configuration initiale, puis une icône près de l’horloge.
+Application Windows de transcription locale des réunions Teams avec détection automatique de la langue : une configuration initiale, puis une icône près de l’horloge.
 
 ## Installer et configurer une fois
 
@@ -108,3 +108,7 @@ Un `WinError 5` dans ce dossier signifie que le nettoyage des fichiers de travai
 Le script utilise desormais un dossier de travail/cache unique sous le dossier temporaire Windows, avec un chemin absolu pour le code et l'icone. Il ne touche pas a l'ancien dossier `build` et n'utilise plus le nettoyage global `--clean`. `dist\Compagnon.exe` reste la sortie finale. Les fichiers temporaires sont supprimes apres succes et conserves pour diagnostic en cas d'echec ; un echec de nettoyage apres compilation ne fait pas echouer le build.
 
 Quitter Compagnon via son icone, faire `git pull origin main`, puis relancer `.\build.ps1`. Cette correction du script reste a verifier sur Windows.
+
+### Langue de la réunion
+
+La langue n’est plus forcée en français : Whisper la détecte au début de l’audio et le mode `transcribe` conserve la langue parlée, sans traduction demandée. Une réunion principalement anglaise est transcrite en anglais, une réunion principalement française en français. La détection peut se tromper, notamment sur un début très court ou ambigu ; les changements de langue au sein d’une même réunion ne sont pas gérés par une détection séparée par segment. Recompiler ou télécharger un nouveau `.exe` pour appliquer cette modification.

@@ -128,6 +128,7 @@ class App:
         ttk.Label(settings, text='Qualité de transcription', style='Card.TLabel').pack(anchor='w')
         ttk.Combobox(settings, textvariable=self.model, values=['tiny', 'base', 'small', 'medium'], state='readonly', width=20).pack(anchor='w', pady=6)
         ttk.Label(settings, text='tiny : rapide  •  base : équilibré  •  small / medium : plus précis, plus lents', style='Card.TLabel').pack(anchor='w', pady=(0, 12))
+        ttk.Label(settings, text='Langue détectée automatiquement • transcription dans la langue parlée', style='Card.TLabel').pack(anchor='w', pady=(0, 8))
         ttk.Checkbutton(settings, text='Inclure mon microphone avec le son du PC', variable=self.mic).pack(anchor='w')
         ttk.Checkbutton(settings, text='Capturer automatiquement les appels Teams', variable=self.auto, command=self.toggle_auto).pack(anchor='w')
         ttk.Checkbutton(settings, text='Lancer Compagnon à l’ouverture de ma session Windows', variable=self.autostart).pack(anchor='w')
@@ -331,7 +332,7 @@ class App:
         self.events.put(('status', 'Chargement du modèle (téléchargement au premier usage), puis transcription…'))
         cache = self.config_path.parent / 'models'
         engine = WhisperModel(model, device='cpu', compute_type='int8', download_root=str(cache))
-        segments, _ = engine.transcribe(str(path), language='fr', vad_filter=True)
+        segments, _ = engine.transcribe(str(path), language=None, task='transcribe', vad_filter=True)
         lines = [(segment.start, segment.text) for segment in segments]
         if not lines:
             raise RuntimeError('Aucune parole détectée. Vérifiez le fichier ou les périphériques audio.')
